@@ -130,12 +130,13 @@ class TestManager:
 
     def __init__(self, pass_statistic, test_script, timeout, save_temps, test_cases, parallel_tests,
                  no_cache, skip_key_off, silent_pass_bug, die_on_pass_bug, print_diff, max_improvement,
-                 no_give_up, also_interesting):
+                 no_give_up, also_interesting, start_with_pass):
         self.test_script = os.path.abspath(test_script)
         self.timeout = timeout
         self.save_temps = save_temps
         self.pass_statistic = pass_statistic
         self.test_cases = set()
+        self.test_cases_modes = {}
         self.parallel_tests = parallel_tests
         self.no_cache = no_cache
         self.skip_key_off = skip_key_off
@@ -145,10 +146,13 @@ class TestManager:
         self.max_improvement = max_improvement
         self.no_give_up = no_give_up
         self.also_interesting = also_interesting
+        self.start_with_pass = start_with_pass
 
         for test_case in test_cases:
             self.check_file_permissions(test_case, [os.F_OK, os.R_OK, os.W_OK], InvalidTestCaseError)
-            self.test_cases.add(os.path.abspath(test_case))
+            fullpath = os.path.abspath(test_case)
+            self.test_cases.add(fullpath)
+            self.test_cases_modes[fullpath] = os.stat(fullpath).st_mode
 
         self.orig_total_file_size = self.total_file_size
         self.cache = {}
@@ -164,6 +168,10 @@ class TestManager:
     def remove_root(self):
         if not self.save_temps:
             rmfolder(self.root)
+
+    def restore_mode(self):
+        for test_case in self.test_cases:
+            os.chmod(test_case, self.test_cases_modes[test_case])
 
     @classmethod
     def is_valid_test(cls, test_script):
@@ -441,6 +449,12 @@ class TestManager:
                     self.state = state
 
     def run_pass(self, pass_):
+        if self.start_with_pass:
+            if self.start_with_pass == str(pass_):
+                self.start_with_pass = None
+            else:
+                return
+
         self.current_pass = pass_
         self.futures = []
         self.temporary_folders = {}
@@ -509,6 +523,7 @@ class TestManager:
 
                     self.cache[pass_key][test_case_before_pass] = tmp_file.read()
 
+        self.restore_mode()
         self.remove_root()
         self.pass_statistic.stop(self.current_pass)
 
